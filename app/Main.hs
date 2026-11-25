@@ -6,12 +6,10 @@ module Main where
 import Control.Monad (void)
 import Database.MySQL.Simple
 import Database.MySQL.Simple.QueryResults (QueryResults(..), convertError)
-import Database.MySQL.Simple.Result (Result, convert)
+import Database.MySQL.Simple.Result (convert)
 import System.IO (hFlush, stdout)
+import Text.Read (readMaybe)
 
-
--- ==========================================
---       МОДЕЛІ ДАНИХ
 -- ==========================================
 
 data Student = Student
@@ -35,6 +33,14 @@ data SoftwarePackage = SoftwarePackage
   , pkgDesc :: String
   } deriving (Show)
 
+data PackageDeveloper = PackageDeveloper
+  { pdId        :: Int
+  , pdPkgId     :: Int
+  , pdStudentId :: Maybe Int
+  , pdTeacherId :: Maybe Int
+  , pdRole      :: String
+  } deriving (Show)
+
 data Seminar = Seminar
   { semId    :: Int
   , semPkgId :: Int
@@ -52,8 +58,6 @@ data DemoTest = DemoTest
   } deriving (Show)
 
 -- ==========================================
---    КЛАС ТИПІВ ДЛЯ РОБОТИ З БД (CLASS)
--- ==========================================
 
 class DBEntity a where
   insertEntity :: Connection -> a -> IO ()
@@ -62,10 +66,8 @@ class DBEntity a where
   formatEntity :: a -> String
 
 -- ==========================================
---      РЕАЛІЗАЦІЇ (INSTANCES)
--- ==========================================
 
--- --- Student ---
+-- --- 1. Student ---
 instance QueryResults Student where
   convertResults [fa, fb, fc, fd] [va, vb, vc, vd] =
     Student (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd)
@@ -85,7 +87,7 @@ instance DBEntity Student where
   formatEntity s =
     "[" ++ show (stId s) ++ "] " ++ stName s ++ " | Група: " ++ stGroup s ++ " | " ++ stEmail s
 
--- --- Teacher ---
+-- --- 2. Teacher ---
 instance QueryResults Teacher where
   convertResults [fa, fb, fc, fd] [va, vb, vc, vd] =
     Teacher (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd)
@@ -105,7 +107,7 @@ instance DBEntity Teacher where
   formatEntity t =
     "[" ++ show (tId t) ++ "] " ++ tName t ++ " (" ++ tDegree t ++ ") | Кафедра: " ++ tDepartment t
 
--- --- SoftwarePackage ---
+-- --- 3. SoftwarePackage ---
 instance QueryResults SoftwarePackage where
   convertResults [fa, fb, fc, fd] [va, vb, vc, vd] =
     SoftwarePackage (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd)
@@ -125,7 +127,31 @@ instance DBEntity SoftwarePackage where
   formatEntity p =
     "[" ++ show (pkgId p) ++ "] " ++ pkgName p ++ " v" ++ pkgVer p ++ " — " ++ pkgDesc p
 
--- --- Seminar ---
+-- --- 4. PackageDeveloper ---
+instance QueryResults PackageDeveloper where
+  convertResults [fa, fb, fc, fd, fe] [va, vb, vc, vd, ve] =
+    PackageDeveloper (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd) (convert fe ve)
+  convertResults fs vs = convertError fs vs 5
+
+instance DBEntity PackageDeveloper where
+  insertEntity conn pd = void $ execute conn
+    "INSERT INTO package_developers (package_id, student_id, teacher_id, role) VALUES (?, ?, ?, ?)"
+    (pdPkgId pd, pdStudentId pd, pdTeacherId pd, pdRole pd)
+
+  updateEntity conn eid pd = void $ execute conn
+    "UPDATE package_developers SET package_id = ?, student_id = ?, teacher_id = ?, role = ? WHERE id = ?"
+    (pdPkgId pd, pdStudentId pd, pdTeacherId pd, pdRole pd, eid)
+
+  getAll conn = query_ conn
+    "SELECT id, package_id, student_id, teacher_id, role FROM package_developers"
+
+  formatEntity pd =
+    "[" ++ show (pdId pd) ++ "] ППП #" ++ show (pdPkgId pd)
+    ++ " | Студент: " ++ maybe "-" (("#" ++) . show) (pdStudentId pd)
+    ++ " | Викладач: " ++ maybe "-" (("#" ++) . show) (pdTeacherId pd)
+    ++ " | Роль: " ++ pdRole pd
+
+-- --- 5. Seminar ---
 instance QueryResults Seminar where
   convertResults [fa, fb, fc, fd, fe] [va, vb, vc, vd, ve] =
     Seminar (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd) (convert fe ve)
@@ -146,7 +172,7 @@ instance DBEntity Seminar where
     "[" ++ show (semId s) ++ "] ППП #" ++ show (semPkgId s) ++ " | " ++ semTopic s
     ++ " | Дата: " ++ semDate s ++ " | Ауд.: " ++ semRoom s
 
--- --- DemoTest ---
+-- --- 6. DemoTest ---
 instance QueryResults DemoTest where
   convertResults [fa, fb, fc, fd, fe] [va, vb, vc, vd, ve] =
     DemoTest (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd) (convert fe ve)
@@ -167,86 +193,119 @@ instance DBEntity DemoTest where
     "[" ++ show (dtId d) ++ "] ППП #" ++ show (dtPkgId d) ++ " | " ++ dtType d
     ++ " | Дата: " ++ dtDate d ++ " | Статус: " ++ dtStatus d
 
--- ==========================================
---     ДОПОМІЖНІ ФУНКЦІЇ ТА ІНТЕРФЕЙС
+
 -- ==========================================
 
 prompt :: String -> IO String
 prompt text = putStr text >> hFlush stdout >> getLine
 
+promptInt :: String -> IO Int
+promptInt text = do
+  s <- prompt text
+  case readMaybe s of
+    Just n  -> return n
+    Nothing -> putStrLn "  Помилка: введіть ціле число." >> promptInt text
+
+promptMaybeInt :: String -> IO (Maybe Int)
+promptMaybeInt text = do
+  s <- prompt text
+  if null s
+    then return Nothing
+    else case readMaybe s of
+      Just n  -> return (Just n)
+      Nothing -> putStrLn "  Помилка: введіть число або залиште порожнім." >> promptMaybeInt text
+
 printList :: DBEntity a => [a] -> IO ()
 printList [] = putStrLn "  (Записів немає)"
 printList xs = mapM_ (putStrLn . ("  " ++) . formatEntity) xs
 
+-- ==========================================
+
+entityMenu :: forall a. DBEntity a => String -> Connection -> IO a -> IO ()
+entityMenu title conn readItem = loop
+  where
+    loop = do
+      putStrLn $ "\n--- " ++ title ++ " ---"
+      putStrLn "1. Переглянути всі записи"
+      putStrLn "2. Додати запис"
+      putStrLn "3. Коригувати запис за ID"
+      putStrLn "0. Назад"
+      ch <- prompt "Оберіть дію: "
+      case ch of
+        "1" -> (getAll conn :: IO [a]) >>= printList >> loop
+        "2" -> do
+          item <- readItem
+          insertEntity conn item
+          putStrLn "Запис додано."
+          loop
+        "3" -> do
+          eid  <- promptInt "Введіть ID запису для коригування: "
+          item <- readItem
+          updateEntity conn eid item
+          putStrLn "Запис оновлено."
+          loop
+        "0" -> return ()
+        _   -> putStrLn "Невірний вибір." >> loop
+
+readPackage :: IO SoftwarePackage
+readPackage = SoftwarePackage 0
+  <$> prompt "Назва ППП: "
+  <*> prompt "Версія: "
+  <*> prompt "Опис: "
+
+readStudent :: IO Student
+readStudent = Student 0
+  <$> prompt "ПІБ студента: "
+  <*> prompt "Група: "
+  <*> prompt "Email: "
+
+readTeacher :: IO Teacher
+readTeacher = Teacher 0
+  <$> prompt "ПІБ викладача: "
+  <*> prompt "Науковий ступінь / звання: "
+  <*> prompt "Кафедра: "
+
+readDeveloper :: IO PackageDeveloper
+readDeveloper = PackageDeveloper 0
+  <$> promptInt "ID ППП: "
+  <*> promptMaybeInt "ID студента (Enter, якщо не студент): "
+  <*> promptMaybeInt "ID викладача (Enter, якщо не викладач): "
+  <*> prompt "Роль у проєкті: "
+
+readSeminar :: IO Seminar
+readSeminar = Seminar 0
+  <$> promptInt "ID ППП: "
+  <*> prompt "Тема семінару: "
+  <*> prompt "Дата та час (YYYY-MM-DD HH:MM): "
+  <*> prompt "Аудиторія: "
+
+readDemoTest :: IO DemoTest
+readDemoTest = DemoTest 0
+  <$> promptInt "ID ППП: "
+  <*> prompt "Тип (Демонстрація / Тестування): "
+  <*> prompt "Дата (YYYY-MM-DD HH:MM): "
+  <*> prompt "Статус (Заплановано / Проведено): "
+
+-- ==========================================
+
 mainMenu :: Connection -> IO ()
 mainMenu conn = do
   putStrLn "\n=== ІС: Пакети прикладних програм факультету ==="
-  putStrLn "1. Показати всі ППП"
-  putStrLn "2. Додати новий ППП"
-  putStrLn "3. Коригувати ППП"
-  putStrLn "4. Показати студентів"
-  putStrLn "5. Додати студента"
-  putStrLn "6. Показати графік семінарів"
-  putStrLn "7. Додати семінар"
-  putStrLn "8. Показати план демонстрацій та тестувань"
-  putStrLn "9. Додати демонстрацію/тестування"
+  putStrLn "1. Пакети прикладних програм (ППП)"
+  putStrLn "2. Студенти-розробники"
+  putStrLn "3. Викладачі"
+  putStrLn "4. Участь у розробці ППП (зв'язки)"
+  putStrLn "5. Графік семінарів"
+  putStrLn "6. План демонстрацій та тестувань"
   putStrLn "0. Вихід"
-  choice <- prompt "Оберіть дію: "
+  choice <- prompt "Оберіть розділ: "
   case choice of
-    "1" -> do
-      (pkgs :: [SoftwarePackage]) <- getAll conn
-      printList pkgs
-      mainMenu conn
-    "2" -> do
-      n <- prompt "Назва ППП: "
-      v <- prompt "Версія: "
-      d <- prompt "Опис: "
-      insertEntity conn (SoftwarePackage 0 n v d)
-      putStrLn "ППП додано."
-      mainMenu conn
-    "3" -> do
-      eid <- read <$> prompt "ID ППП для редагування: "
-      n   <- prompt "Нова назва: "
-      v   <- prompt "Нова версія: "
-      d   <- prompt "Новий опис: "
-      updateEntity conn eid (SoftwarePackage eid n v d)
-      putStrLn "ППП оновлено."
-      mainMenu conn
-    "4" -> do
-      (sts :: [Student]) <- getAll conn
-      printList sts
-      mainMenu conn
-    "5" -> do
-      n <- prompt "ПІБ студента: "
-      g <- prompt "Група: "
-      e <- prompt "Email: "
-      insertEntity conn (Student 0 n g e)
-      putStrLn "Студента додано."
-      mainMenu conn
-    "6" -> do
-      (sems :: [Seminar]) <- getAll conn
-      printList sems
-      mainMenu conn
-    "7" -> do
-      pid <- read <$> prompt "ID ППП: "
-      t   <- prompt "Тема семінару: "
-      dt  <- prompt "Дата та час (YYYY-MM-DD HH:MM): "
-      r   <- prompt "Аудиторія: "
-      insertEntity conn (Seminar 0 pid t dt r)
-      putStrLn "Семінар додано."
-      mainMenu conn
-    "8" -> do
-      (dts :: [DemoTest]) <- getAll conn
-      printList dts
-      mainMenu conn
-    "9" -> do
-      pid <- read <$> prompt "ID ППП: "
-      tp  <- prompt "Тип (Демонстрація / Тестування): "
-      dt  <- prompt "Дата (YYYY-MM-DD HH:MM): "
-      st  <- prompt "Статус (Заплановано / Проведено): "
-      insertEntity conn (DemoTest 0 pid tp dt st)
-      putStrLn "Запис додано."
-      mainMenu conn
+    "1" -> entityMenu "Пакети прикладних програм" conn readPackage >> mainMenu conn
+    "2" -> entityMenu "Студенти-розробники" conn readStudent >> mainMenu conn
+    "3" -> entityMenu "Викладачі" conn readTeacher >> mainMenu conn
+    "4" -> entityMenu "Участь у розробці ППП" conn readDeveloper >> mainMenu conn
+    "5" -> entityMenu "Графік семінарів" conn readSeminar >> mainMenu conn
+    "6" -> entityMenu "План демонстрацій та тестувань" conn readDemoTest >> mainMenu conn
     "0" -> putStrLn "Роботу завершено."
     _   -> putStrLn "Невірний вибір." >> mainMenu conn
 
