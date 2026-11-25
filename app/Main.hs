@@ -4,6 +4,7 @@
 module Main where
 
 import Control.Monad (void)
+import Data.Proxy (Proxy(..))
 import qualified Data.Text as T
 import Database.MySQL.Simple
 import Database.MySQL.Simple.QueryResults (QueryResults(..), convertError)
@@ -67,6 +68,7 @@ data DemoTest = DemoTest
 class DBEntity a where
   insertEntity :: Connection -> a -> IO ()
   updateEntity :: Connection -> Int -> a -> IO ()
+  deleteEntity :: Proxy a -> Connection -> Int -> IO ()
   getAll       :: Connection -> IO [a]
   formatEntity :: a -> String
 
@@ -93,6 +95,10 @@ instance DBEntity Student where
     "UPDATE students SET full_name = ?, student_group = ?, email = ? WHERE id = ?"
     (T.pack (stName s), T.pack (stGroup s), T.pack (stEmail s), eid)
 
+  deleteEntity _ conn eid = void $ execute conn
+    "DELETE FROM students WHERE id = ?"
+    (Only eid)
+
   getAll conn = query_ conn "SELECT id, full_name, student_group, email FROM students"
 
   formatEntity s =
@@ -116,6 +122,10 @@ instance DBEntity Teacher where
   updateEntity conn eid t = void $ execute conn
     "UPDATE teachers SET full_name = ?, degree = ?, department = ? WHERE id = ?"
     (T.pack (tName t), T.pack (tDegree t), T.pack (tDepartment t), eid)
+
+  deleteEntity _ conn eid = void $ execute conn
+    "DELETE FROM teachers WHERE id = ?"
+    (Only eid)
 
   getAll conn = query_ conn "SELECT id, full_name, degree, department FROM teachers"
 
@@ -141,6 +151,10 @@ instance DBEntity SoftwarePackage where
     "UPDATE software_packages SET name = ?, version = ?, description = ? WHERE id = ?"
     (T.pack (pkgName p), T.pack (pkgVer p), T.pack (pkgDesc p), eid)
 
+  deleteEntity _ conn eid = void $ execute conn
+    "DELETE FROM software_packages WHERE id = ?"
+    (Only eid)
+
   getAll conn = query_ conn "SELECT id, name, version, description FROM software_packages"
 
   formatEntity p =
@@ -165,6 +179,10 @@ instance DBEntity PackageDeveloper where
   updateEntity conn eid pd = void $ execute conn
     "UPDATE package_developers SET package_id = ?, student_id = ?, teacher_id = ?, role = ? WHERE id = ?"
     (pdPkgId pd, pdStudentId pd, pdTeacherId pd, T.pack (pdRole pd), eid)
+
+  deleteEntity _ conn eid = void $ execute conn
+    "DELETE FROM package_developers WHERE id = ?"
+    (Only eid)
 
   getAll conn = query_ conn
     "SELECT id, package_id, student_id, teacher_id, role FROM package_developers"
@@ -195,6 +213,10 @@ instance DBEntity Seminar where
     "UPDATE seminars SET package_id = ?, topic = ?, seminar_date = ?, room = ? WHERE id = ?"
     (semPkgId s, T.pack (semTopic s), T.pack (semDate s), T.pack (semRoom s), eid)
 
+  deleteEntity _ conn eid = void $ execute conn
+    "DELETE FROM seminars WHERE id = ?"
+    (Only eid)
+
   getAll conn = query_ conn "SELECT id, package_id, topic, seminar_date, room FROM seminars"
 
   formatEntity s =
@@ -220,6 +242,10 @@ instance DBEntity DemoTest where
   updateEntity conn eid d = void $ execute conn
     "UPDATE demo_tests SET package_id = ?, event_type = ?, scheduled_date = ?, status = ? WHERE id = ?"
     (dtPkgId d, T.pack (dtType d), T.pack (dtDate d), T.pack (dtStatus d), eid)
+
+  deleteEntity _ conn eid = void $ execute conn
+    "DELETE FROM demo_tests WHERE id = ?"
+    (Only eid)
 
   getAll conn = query_ conn "SELECT id, package_id, event_type, scheduled_date, status FROM demo_tests"
 
@@ -266,6 +292,7 @@ entityMenu title conn readItem = loop
       putStrLn "1. Переглянути всі записи"
       putStrLn "2. Додати запис"
       putStrLn "3. Коригувати запис за ID"
+      putStrLn "4. Видалити запис за ID"
       putStrLn "0. Назад"
       ch <- prompt "Оберіть дію: "
       case ch of
@@ -280,6 +307,11 @@ entityMenu title conn readItem = loop
           item <- readItem
           updateEntity conn eid item
           putStrLn "Запис оновлено."
+          loop
+        "4" -> do
+          eid <- promptInt "Введіть ID запису для видалення: "
+          deleteEntity (Proxy :: Proxy a) conn eid
+          putStrLn "Запис видалено."
           loop
         "0" -> return ()
         _   -> putStrLn "Невірний вибір." >> loop
