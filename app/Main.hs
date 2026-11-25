@@ -11,6 +11,7 @@ import Database.MySQL.Simple.QueryResults (QueryResults(..), convertError)
 import Database.MySQL.Simple.Result (convert)
 import System.IO (hFlush, stdout)
 import Text.Read (readMaybe)
+import Control.Exception (SomeException, catch)
 
 -- ==========================================
 -- 1. МОДЕЛІ ДАНИХ (6 ТАБЛИЦЬ)
@@ -280,6 +281,10 @@ printList :: DBEntity a => [a] -> IO ()
 printList [] = putStrLn "  (Записів немає)"
 printList xs = mapM_ (putStrLn . ("  " ++) . formatEntity) xs
 
+runSafe :: IO () -> IO ()
+runSafe action = catch action $ \(e :: SomeException) ->
+  putStrLn $ "  [Помилка БД] " ++ show e
+
 -- ==========================================
 -- 5. ПІДМЕНЮ ДЛЯ КОЖНОЇ ТАБЛИЦІ
 -- ==========================================
@@ -296,22 +301,19 @@ entityMenu title conn readItem = loop
       putStrLn "0. Назад"
       ch <- prompt "Оберіть дію: "
       case ch of
-        "1" -> (getAll conn :: IO [a]) >>= printList >> loop
+        "1" -> runSafe ((getAll conn :: IO [a]) >>= printList) >> loop
         "2" -> do
           item <- readItem
-          insertEntity conn item
-          putStrLn "Запис додано."
+          runSafe (insertEntity conn item >> putStrLn "Запис додано.")
           loop
         "3" -> do
           eid  <- promptInt "Введіть ID запису для коригування: "
           item <- readItem
-          updateEntity conn eid item
-          putStrLn "Запис оновлено."
+          runSafe (updateEntity conn eid item >> putStrLn "Запис оновлено.")
           loop
         "4" -> do
           eid <- promptInt "Введіть ID запису для видалення: "
-          deleteEntity (Proxy :: Proxy a) conn eid
-          putStrLn "Запис видалено."
+          runSafe (deleteEntity (Proxy :: Proxy a) conn eid >> putStrLn "Запис видалено.")
           loop
         "0" -> return ()
         _   -> putStrLn "Невірний вибір." >> loop
