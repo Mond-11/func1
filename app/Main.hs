@@ -4,12 +4,15 @@
 module Main where
 
 import Control.Monad (void)
+import qualified Data.Text as T
 import Database.MySQL.Simple
 import Database.MySQL.Simple.QueryResults (QueryResults(..), convertError)
 import Database.MySQL.Simple.Result (convert)
 import System.IO (hFlush, stdout)
 import Text.Read (readMaybe)
 
+-- ==========================================
+-- 1. МОДЕЛІ ДАНИХ (6 ТАБЛИЦЬ)
 -- ==========================================
 
 data Student = Student
@@ -58,6 +61,8 @@ data DemoTest = DemoTest
   } deriving (Show)
 
 -- ==========================================
+-- 2. КЛАС ТИПІВ ДЛЯ РОБОТИ З БД (CLASS)
+-- ==========================================
 
 class DBEntity a where
   insertEntity :: Connection -> a -> IO ()
@@ -66,21 +71,27 @@ class DBEntity a where
   formatEntity :: a -> String
 
 -- ==========================================
+-- 3. РЕАЛІЗАЦІЇ (INSTANCES)
+-- ==========================================
 
 -- --- 1. Student ---
 instance QueryResults Student where
   convertResults [fa, fb, fc, fd] [va, vb, vc, vd] =
-    Student (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd)
+    Student
+      (convert fa va)
+      (T.unpack (convert fb vb))
+      (T.unpack (convert fc vc))
+      (T.unpack (convert fd vd))
   convertResults fs vs = convertError fs vs 4
 
 instance DBEntity Student where
   insertEntity conn s = void $ execute conn
     "INSERT INTO students (full_name, student_group, email) VALUES (?, ?, ?)"
-    (stName s, stGroup s, stEmail s)
+    (T.pack (stName s), T.pack (stGroup s), T.pack (stEmail s))
 
   updateEntity conn eid s = void $ execute conn
     "UPDATE students SET full_name = ?, student_group = ?, email = ? WHERE id = ?"
-    (stName s, stGroup s, stEmail s, eid)
+    (T.pack (stName s), T.pack (stGroup s), T.pack (stEmail s), eid)
 
   getAll conn = query_ conn "SELECT id, full_name, student_group, email FROM students"
 
@@ -90,17 +101,21 @@ instance DBEntity Student where
 -- --- 2. Teacher ---
 instance QueryResults Teacher where
   convertResults [fa, fb, fc, fd] [va, vb, vc, vd] =
-    Teacher (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd)
+    Teacher
+      (convert fa va)
+      (T.unpack (convert fb vb))
+      (T.unpack (convert fc vc))
+      (T.unpack (convert fd vd))
   convertResults fs vs = convertError fs vs 4
 
 instance DBEntity Teacher where
   insertEntity conn t = void $ execute conn
     "INSERT INTO teachers (full_name, degree, department) VALUES (?, ?, ?)"
-    (tName t, tDegree t, tDepartment t)
+    (T.pack (tName t), T.pack (tDegree t), T.pack (tDepartment t))
 
   updateEntity conn eid t = void $ execute conn
     "UPDATE teachers SET full_name = ?, degree = ?, department = ? WHERE id = ?"
-    (tName t, tDegree t, tDepartment t, eid)
+    (T.pack (tName t), T.pack (tDegree t), T.pack (tDepartment t), eid)
 
   getAll conn = query_ conn "SELECT id, full_name, degree, department FROM teachers"
 
@@ -110,17 +125,21 @@ instance DBEntity Teacher where
 -- --- 3. SoftwarePackage ---
 instance QueryResults SoftwarePackage where
   convertResults [fa, fb, fc, fd] [va, vb, vc, vd] =
-    SoftwarePackage (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd)
+    SoftwarePackage
+      (convert fa va)
+      (T.unpack (convert fb vb))
+      (T.unpack (convert fc vc))
+      (T.unpack (convert fd vd))
   convertResults fs vs = convertError fs vs 4
 
 instance DBEntity SoftwarePackage where
   insertEntity conn p = void $ execute conn
     "INSERT INTO software_packages (name, version, description) VALUES (?, ?, ?)"
-    (pkgName p, pkgVer p, pkgDesc p)
+    (T.pack (pkgName p), T.pack (pkgVer p), T.pack (pkgDesc p))
 
   updateEntity conn eid p = void $ execute conn
     "UPDATE software_packages SET name = ?, version = ?, description = ? WHERE id = ?"
-    (pkgName p, pkgVer p, pkgDesc p, eid)
+    (T.pack (pkgName p), T.pack (pkgVer p), T.pack (pkgDesc p), eid)
 
   getAll conn = query_ conn "SELECT id, name, version, description FROM software_packages"
 
@@ -130,17 +149,22 @@ instance DBEntity SoftwarePackage where
 -- --- 4. PackageDeveloper ---
 instance QueryResults PackageDeveloper where
   convertResults [fa, fb, fc, fd, fe] [va, vb, vc, vd, ve] =
-    PackageDeveloper (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd) (convert fe ve)
+    PackageDeveloper
+      (convert fa va)
+      (convert fb vb)
+      (convert fc vc)
+      (convert fd vd)
+      (T.unpack (convert fe ve))
   convertResults fs vs = convertError fs vs 5
 
 instance DBEntity PackageDeveloper where
   insertEntity conn pd = void $ execute conn
     "INSERT INTO package_developers (package_id, student_id, teacher_id, role) VALUES (?, ?, ?, ?)"
-    (pdPkgId pd, pdStudentId pd, pdTeacherId pd, pdRole pd)
+    (pdPkgId pd, pdStudentId pd, pdTeacherId pd, T.pack (pdRole pd))
 
   updateEntity conn eid pd = void $ execute conn
     "UPDATE package_developers SET package_id = ?, student_id = ?, teacher_id = ?, role = ? WHERE id = ?"
-    (pdPkgId pd, pdStudentId pd, pdTeacherId pd, pdRole pd, eid)
+    (pdPkgId pd, pdStudentId pd, pdTeacherId pd, T.pack (pdRole pd), eid)
 
   getAll conn = query_ conn
     "SELECT id, package_id, student_id, teacher_id, role FROM package_developers"
@@ -154,17 +178,22 @@ instance DBEntity PackageDeveloper where
 -- --- 5. Seminar ---
 instance QueryResults Seminar where
   convertResults [fa, fb, fc, fd, fe] [va, vb, vc, vd, ve] =
-    Seminar (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd) (convert fe ve)
+    Seminar
+      (convert fa va)
+      (convert fb vb)
+      (T.unpack (convert fc vc))
+      (T.unpack (convert fd vd))
+      (T.unpack (convert fe ve))
   convertResults fs vs = convertError fs vs 5
 
 instance DBEntity Seminar where
   insertEntity conn s = void $ execute conn
     "INSERT INTO seminars (package_id, topic, seminar_date, room) VALUES (?, ?, ?, ?)"
-    (semPkgId s, semTopic s, semDate s, semRoom s)
+    (semPkgId s, T.pack (semTopic s), T.pack (semDate s), T.pack (semRoom s))
 
   updateEntity conn eid s = void $ execute conn
     "UPDATE seminars SET package_id = ?, topic = ?, seminar_date = ?, room = ? WHERE id = ?"
-    (semPkgId s, semTopic s, semDate s, semRoom s, eid)
+    (semPkgId s, T.pack (semTopic s), T.pack (semDate s), T.pack (semRoom s), eid)
 
   getAll conn = query_ conn "SELECT id, package_id, topic, seminar_date, room FROM seminars"
 
@@ -175,17 +204,22 @@ instance DBEntity Seminar where
 -- --- 6. DemoTest ---
 instance QueryResults DemoTest where
   convertResults [fa, fb, fc, fd, fe] [va, vb, vc, vd, ve] =
-    DemoTest (convert fa va) (convert fb vb) (convert fc vc) (convert fd vd) (convert fe ve)
+    DemoTest
+      (convert fa va)
+      (convert fb vb)
+      (T.unpack (convert fc vc))
+      (T.unpack (convert fd vd))
+      (T.unpack (convert fe ve))
   convertResults fs vs = convertError fs vs 5
 
 instance DBEntity DemoTest where
   insertEntity conn d = void $ execute conn
     "INSERT INTO demo_tests (package_id, event_type, scheduled_date, status) VALUES (?, ?, ?, ?)"
-    (dtPkgId d, dtType d, dtDate d, dtStatus d)
+    (dtPkgId d, T.pack (dtType d), T.pack (dtDate d), T.pack (dtStatus d))
 
   updateEntity conn eid d = void $ execute conn
     "UPDATE demo_tests SET package_id = ?, event_type = ?, scheduled_date = ?, status = ? WHERE id = ?"
-    (dtPkgId d, dtType d, dtDate d, dtStatus d, eid)
+    (dtPkgId d, T.pack (dtType d), T.pack (dtDate d), T.pack (dtStatus d), eid)
 
   getAll conn = query_ conn "SELECT id, package_id, event_type, scheduled_date, status FROM demo_tests"
 
@@ -193,7 +227,8 @@ instance DBEntity DemoTest where
     "[" ++ show (dtId d) ++ "] ППП #" ++ show (dtPkgId d) ++ " | " ++ dtType d
     ++ " | Дата: " ++ dtDate d ++ " | Статус: " ++ dtStatus d
 
-
+-- ==========================================
+-- 4. ДОПОМІЖНІ ФУНКЦІЇ ВВЕДЕННЯ
 -- ==========================================
 
 prompt :: String -> IO String
@@ -219,6 +254,8 @@ printList :: DBEntity a => [a] -> IO ()
 printList [] = putStrLn "  (Записів немає)"
 printList xs = mapM_ (putStrLn . ("  " ++) . formatEntity) xs
 
+-- ==========================================
+-- 5. ПІДМЕНЮ ДЛЯ КОЖНОЇ ТАБЛИЦІ
 -- ==========================================
 
 entityMenu :: forall a. DBEntity a => String -> Connection -> IO a -> IO ()
@@ -287,6 +324,8 @@ readDemoTest = DemoTest 0
   <*> prompt "Статус (Заплановано / Проведено): "
 
 -- ==========================================
+-- 6. ГОЛОВНЕ МЕНЮ ТА ТОЧКА ВХОДУ
+-- ==========================================
 
 mainMenu :: Connection -> IO ()
 mainMenu conn = do
@@ -317,5 +356,6 @@ main = do
     , connectPassword = "rootpass"
     , connectDatabase = "faculty_software"
     }
+  void $ execute_ conn "SET NAMES utf8mb4"
   mainMenu conn
   close conn
